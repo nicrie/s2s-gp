@@ -1,0 +1,8 @@
+name: s2s-gp
+channels:
+  - defaults
+dependencies:
+  - pip
+  - python
+  - pip:
+    - -r requirements.txt
