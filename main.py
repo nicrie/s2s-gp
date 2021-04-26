@@ -7,6 +7,7 @@
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
+from sklearn.metrics import pairwise_distances
 from sklearn.model_selection import train_test_split
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 
@@ -15,9 +16,21 @@ from scipy.linalg import cholesky, cho_solve, solve_triangular
 # =============================================================================
 
 
-def C(x1, x2, a=1, b=1):
-    from sklearn.metrics import pairwise_distances
+def C_SE(x1, x2, a=1, b=1):
     return a * np.exp(- b * pairwise_distances(x1, x2)**2)
+
+
+def C_LIN(x1, x2, a=1, b=1):
+    return x1 @ x2.T
+
+
+def C_NN(x1, x2, a=1, b=1):
+    assert x1.shape[1] == x2.shape[1]
+    b = b / x1.shape[1]
+    X_11 = np.sum(x1**2, axis=1)[:, np.newaxis]
+    X_12 = x1 @ x2.T
+    X_22 = np.sum(x2**2, axis=1)[np.newaxis, :]
+    return a * np.arcsin(2*b*X_12 / np.sqrt(1+2*b*X_11) / np.sqrt(1+2*b*X_22))
 
 
 def reshape_to_3D(field_2d, nan_index, ref):
@@ -123,8 +136,9 @@ N_train = sst_clean.shape[0] - N_test
 #   var_* = kappa - k_r K_rs^-1 k_s, kappa = C(x_*, x_*)
 #
 
-eps = 1e-12
-C_kwargs = dict(a=.5, b=1e-3)
+eps = 1e-3
+C = C_NN
+C_kwargs = dict(a=.5, b=1e-1)
 
 K = C(X_train, X_train, **C_kwargs)
 k = C(X_train, X_test, **C_kwargs)
