@@ -11,6 +11,14 @@ from sklearn.metrics import pairwise_distances
 from sklearn.model_selection import train_test_split
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 
+# Ali musst du vielleicht noch nachinstallieren:
+# pip install xmca
+# falls der wegen cartopy meckert: conda install cartopy
+try:
+    from xmca import xMCA
+except ImportError:
+    pass
+
 # =============================================================================
 # Function
 # =============================================================================
@@ -68,6 +76,16 @@ def ACC(F, A):
 # -----------------------------------------------------------------------------
 # Global SST on a 4x4 grid from 1979-2020, weekly
 sst = xr.open_dataarray('./data/era5_sst_1979-2020_weekly.nc')
+# cut out North/South pole, data seems not reliable
+sst = sst.sel(lat=slice(70, -70))
+
+# get first 10 PCs of SST
+pca = xMCA(sst)
+pca.normalize()
+pca.apply_coslat()
+pca.solve()
+pca.rotate(500, 1)
+sst_pcs = pca.pcs(10, scaling='max')['left']
 
 # weekly anomalies
 weeks = sst.time.dt.isocalendar().week
@@ -84,10 +102,12 @@ prcp = prcp.groupby(weeks) - prcp.groupby(weeks).mean()
 
 # compare SST with precipitation 4 weeks later
 sst     = sst.isel(time=slice(None, -4))
+sst_pcs     = sst_pcs.isel(time=slice(None, -4))
 prcp    = prcp.isel(time=slice(4, None))
 
 
 sst.shape  # (time, lat, lon)
+sst_pcs.shape  # (time, mode)
 prcp.shape  # (time, lat, lon)
 
 # reshape to 2D
@@ -97,16 +117,20 @@ sst_index = ~xr.ufuncs.isnan(sst_2d)[0]
 prcp_index = ~xr.ufuncs.isnan(prcp_2d)[0]
 
 sst_clean = sst_2d.dropna('x').values
+sst_pcs     = sst_pcs.values
 prcp_clean = prcp_2d.dropna('x').values
+
+# predictor X: SSTa + 10 PCs
+X = np.concatenate([sst_clean, sst_pcs], axis=1)
+# predictant y: PRCPa
+y = prcp_clean
 
 # Split train/test set #%%
 # -----------------------------------------------------------------------------
 N_test = 214
 
 np.random.seed(42)
-X_train, X_test, y_train, y_test = train_test_split(
-    sst_clean, prcp_clean, test_size=N_test
-)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=N_test)
 N_train = sst_clean.shape[0] - N_test
 
 
